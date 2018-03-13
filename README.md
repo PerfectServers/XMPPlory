@@ -1,2 +1,2 @@
 # XMPPlory
-Swift XMPP
+WIP
