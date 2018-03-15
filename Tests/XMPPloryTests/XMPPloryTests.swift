@@ -37,7 +37,7 @@ class XMPPloryTests: XCTestCase {
 	
 	func testServerRun() {
 		do {
-			let server = try XServer(name: "127.0.0.1", processors: XServer.standardProcessors)
+			let server = try XServer(name: "127.0.0.1", processors: XServer.standardProcessors + [IQRegisterProcessor()])
 			try server.start()
 		} catch {
 			XCTFail("\(error)")

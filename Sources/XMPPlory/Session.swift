@@ -93,6 +93,9 @@ public class XSession {
 		startedAt = Date.now
 		pingedAt = 0
 	}
+	deinit {
+		debug(msg: "Session closing \(id)")
+	}
 	private func debug(msg: String) {
 		print(msg)
 	}
@@ -131,6 +134,10 @@ public class XSession {
 		writeStanzas.append(s)
 	}
 	
+	public func queueStanzas(_ s: [StanzaElement]) {
+		s.forEach { self.queueStanza($0) }
+	}
+	
 	func writePendingStanzas() throws {
 		var bytes: [UInt8] = []
 		while let item = writeStanzas.first {
@@ -141,7 +148,7 @@ public class XSession {
 			bytes.append(contentsOf: b)
 			writeStanzas.removeFirst()
 		}
-		debug(msg: "writing: \(String(describing: String(validatingUTF8: bytes)))")
+		debug(msg: "writing: \(String(validatingUTF8: bytes)!)")
 		net.write(bytes: bytes) {
 			wrote in
 			do {
@@ -160,7 +167,7 @@ public class XSession {
 			bytes in
 			do {
 				if let bytes = bytes, !bytes.isEmpty {
-					self.debug(msg: "read: \(String(describing: String(validatingUTF8: bytes)))")
+					self.debug(msg: "read: \(String(validatingUTF8: bytes)!)")
 					try self.sax.pushData(bytes)
 					try self.checkState()
 				} else {
@@ -177,7 +184,7 @@ public class XSession {
 			bytes in
 			do {
 				if let bytes = bytes {
-					self.debug(msg: "read: \(String(describing: String(validatingUTF8: bytes)))")
+					self.debug(msg: "read: \(String(validatingUTF8: bytes)!)")
 					try self.sax.pushData(bytes)
 					try self.checkState()
 				} else {
