@@ -15,46 +15,61 @@ public struct XClientStanzaElement {
 	public let namespaces: [SAXDelegateNamespace]?
 	public let attributes: [SAXDelegateAttribute]?
 	public let closed: Bool
-
 	var key: String { return "\(localName) \(closed) \(uri ?? "")" }
-	
 	func isClose(localName: String, uri: String?) -> Bool {
 		return !closed && localName == self.localName && uri == self.uri
 	}
 }
 
-public enum XStanzaComponent {
-	case startElement(XClientStanzaElement), endElement(XClientStanzaElement), closedElement(XClientStanzaElement, [XStanzaComponent]), chars(String)
+public enum XClientStanzaComponent {
+	case startElement(XClientStanzaElement),
+		endElement(XClientStanzaElement),
+		closedElement(XClientStanzaElement, [XClientStanzaComponent]),
+		chars(String)
 }
 
-public protocol StanzaElement {
+extension Array where Element == XClientStanzaComponent {
+	var allText: String {
+		return self.flatMap {
+			guard case .chars(let c) = $0 else {
+				return nil
+			}
+			return c
+		}.joined(separator: "")
+	}
+}
+
+public protocol XServerStanzaElement {
 	var bytes: [UInt8] { get }
 }
 
-extension String: StanzaElement {
+extension String: XServerStanzaElement {
 	public var bytes: [UInt8] {
 		return Array(self.utf8)
 	}
 }
 
-struct StanzaOpen: StanzaElement {
+public struct StanzaOpen: XServerStanzaElement {
 	let name: String
 	let attributes: [(String, String)]
 	let empty: Bool
-	init(name n: String, attributes a: [(String, String)] = [], empty e: Bool) {
+	public init(name n: String, attributes a: [(String, String)] = [], empty e: Bool) {
 		name = n
 		attributes = a
 		empty = e
 	}
-	var bytes: [UInt8] {
+	public var bytes: [UInt8] {
 		let str = "<\(name)" + attributes.map { " \($0.0)=\"\($0.1)\"" }.joined(separator: "") + "\(empty ? "/" : "")>\n"
 		return Array(str.utf8)
 	}
 }
 
-struct StanzaClose: StanzaElement {
+public struct StanzaClose: XServerStanzaElement {
 	let name: String
-	var bytes: [UInt8] {
+	public init(name n: String) {
+		name = n
+	}
+	public var bytes: [UInt8] {
 		return Array("</\(name)>\n".utf8)
 	}
 }

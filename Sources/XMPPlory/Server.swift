@@ -21,9 +21,23 @@ private func getDB() throws -> DB {
 	return Database(configuration: try SQLiteDatabaseConfiguration(databaseName))
 }
 
+public struct XServerError: Error {
+	public let description: String
+	public init(_ d: String) {
+		description = d
+	}
+}
+
 public struct XServer {
 	public static let standardProcessors: [XStanzaProcessor] = [StreamStanzaProcessor(),
-																IQStanzaProcessor()]
+																IQProcessor(),
+																IQRosterProcessor(),
+																IQPrivacyProcessor(),
+																IQPrivateProcessor(),
+																IQDiscoProcessor(),
+																TLSProcessor(),
+																MessageProcessor(),
+																PresenceProcessor()]
 	
 	let name: String
 	let net: NetTCP
@@ -58,8 +72,9 @@ public struct XServer {
 	}
 	
 	public func close() {
-		// !FIX! graceful close connections
+		net.close()
 		do {
+			// !FIX! graceful close connections
 //			<stream:error>
 //			<system-shutdown
 //			xmlns='urn:ietf:params:xml:ns:xmpp-streams'/>
@@ -68,8 +83,6 @@ public struct XServer {
 		} catch {
 			handleError(error)
 		}
-		
-		net.close()
 	}
 	
 	func handleError(_ error: Error) {
@@ -77,23 +90,19 @@ public struct XServer {
 	}
 	
 	func accepted(client: NetTCP) throws {
-		let session = XSession(client, serverName: name, processors: processors)
+		let net = NetTCPSSL()
+		net.fd = client.fd
+		client.fd = .init(fd: invalidSocket) // so it doesn't close
+		_ = net.setDefaultVerifyPaths()
+		guard net.useCertificateFile(cert: serverCertPath),
+			net.usePrivateKeyFile(cert: serverPrivateKeyPath),
+			net.checkPrivateKey() else {
+				let code = Int32(net.errorCode())
+				throw XServerError("Error validating private key file: \(net.errorStr(forCode: code))")
+		}
+		let session = XSession(net, serverName: name, processors: processors)
 		try session.checkState()
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

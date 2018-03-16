@@ -11,8 +11,16 @@ import PerfectNet
 import PerfectXML
 
 let maxWriteSize = 1024 * 16
+let readIdleTimeoutSeconds = 60.0
 
-public struct XSessionError: Error {
+public struct XStreamError: Error {
+	public let description: String
+	public init(_ d: String) {
+		description = d
+	}
+}
+
+public struct XStanzaError: Error {
 	public let description: String
 	public init(_ d: String) {
 		description = d
@@ -20,7 +28,7 @@ public struct XSessionError: Error {
 }
 
 class XSAXDelegate: SAXDelegate {
-	var saxItems: [XStanzaComponent] = []
+	var saxItems: [XClientStanzaComponent] = []
 	func startElementNs(localName: String,
 						prefix: String?,
 						uri: String?,
@@ -65,43 +73,71 @@ class XSAXDelegate: SAXDelegate {
 	}
 }
 
+public typealias XSessionCallback = (@escaping () -> ()) -> ()
+
 public class XSession {
 	public enum State: Int {
 		case new, closed, serverStreamSent
 	}
-	let net: NetTCP
-	let processors: [String:XStanzaProcessor]
+	public let net: NetTCPSSL
 	public let serverName: String
-	public let id = UUID().uuidString
-	let sax: SAXParser
-	let saxDelegate = XSAXDelegate()
+	public var id = UUID().uuidString
 	public let startedAt: TimeInterval
-	public let pingedAt: TimeInterval
+	public var pingedAt: TimeInterval
 	public var state: State = .new
-	var writeStanzas: [StanzaElement] = []
-	init(_ n: NetTCP, serverName s: String, processors p: [XStanzaProcessor]) {
+	let originalProcessors: [XStanzaProcessor]
+	
+	var mappedProcessors: [String:XStanzaProcessor] = [:]
+	var streamFeatures: [XServerStanzaElement] = []
+	var sax: SAXParser
+	var saxDelegate = XSAXDelegate()
+	var writeStanzas: [XServerStanzaElement] = []
+	var scratchPad: [String:Any] = [:]
+	var callbacks: [XSessionCallback] = []
+	
+	init(_ n: NetTCPSSL, serverName s: String, processors p: [XStanzaProcessor]) {
 		net = n
 		serverName = s
-		processors = Dictionary(uniqueKeysWithValues: p.flatMap {
+		originalProcessors = p
+		sax = SAXParser(delegate: saxDelegate)
+		startedAt = Date.now
+		pingedAt = 0
+		streamFeatures = p.flatMap { $0.streamFeatures(session: self) }
+		mappedProcessors = Dictionary(uniqueKeysWithValues: p.flatMap {
 			proc in
-			return proc.registrations.map {
+			return proc.registrations(session: self).map {
 				reg in
 				return ("\(reg.localName) \(reg.closedOnly) \(reg.uri)", proc)
 			}
 		})
-		sax = SAXParser(delegate: saxDelegate)
-		startedAt = Date.now
-		pingedAt = 0
 	}
 	deinit {
 		debug(msg: "Session closing \(id)")
+	}
+	public func close() {
+		state = .closed
+		net.close()
+	}
+	public func restartStream() {
+		state = .new
+		id = UUID().uuidString
+		saxDelegate = XSAXDelegate()
+		sax = SAXParser(delegate: saxDelegate)
+		streamFeatures = originalProcessors.flatMap { $0.streamFeatures(session: self) }
+		mappedProcessors = Dictionary(uniqueKeysWithValues: originalProcessors.flatMap {
+			proc in
+			return proc.registrations(session: self).map {
+				reg in
+				return ("\(reg.localName) \(reg.closedOnly) \(reg.uri)", proc)
+			}
+		})
 	}
 	private func debug(msg: String) {
 		print(msg)
 	}
 	public func getProcessor(key: String) throws -> XStanzaProcessor {
-		guard let proc = processors[key] else {
-			throw XSessionError("No processor for stanza \(key)")
+		guard let proc = mappedProcessors[key] else {
+			throw XStreamError("No processor for stanza \(key)")
 		}
 		return proc
 	}
@@ -112,6 +148,16 @@ public class XSession {
 		}
 		guard writeStanzas.isEmpty else {
 			return try writePendingStanzas()
+		}
+		if !callbacks.isEmpty {
+			let callback = callbacks.removeFirst()
+			return callback { // this strongly holds self
+				do {
+					try self.checkState()
+				} catch {
+					self.handleError(error)
+				}
+			}
 		}
 		guard let top = saxDelegate.saxItems.first else {
 			return buffer()
@@ -130,11 +176,11 @@ public class XSession {
 		try checkState()
 	}
 	
-	public func queueStanza(_ s: StanzaElement) {
+	public func queueStanza(_ s: XServerStanzaElement) {
 		writeStanzas.append(s)
 	}
 	
-	public func queueStanzas(_ s: [StanzaElement]) {
+	public func queueStanzas(_ s: [XServerStanzaElement]) {
 		s.forEach { self.queueStanza($0) }
 	}
 	
@@ -153,7 +199,7 @@ public class XSession {
 			wrote in
 			do {
 				guard wrote == bytes.count else {
-					throw XSessionError("Unable to write bytes to client.")
+					throw XStreamError("Unable to write bytes to client.")
 				}
 				try self.checkState()
 			} catch {
@@ -166,7 +212,10 @@ public class XSession {
 		net.readSomeBytes(count: 4096) {
 			bytes in
 			do {
-				if let bytes = bytes, !bytes.isEmpty {
+				guard let bytes = bytes else {
+					return self.close()
+				}
+				if !bytes.isEmpty {
 					self.debug(msg: "read: \(String(validatingUTF8: bytes)!)")
 					try self.sax.pushData(bytes)
 					try self.checkState()
@@ -180,10 +229,13 @@ public class XSession {
 	}
 	
 	func bufferWait() {
-		net.readBytesFully(count: 1, timeoutSeconds: 5) {
+		net.readBytesFully(count: 1, timeoutSeconds: readIdleTimeoutSeconds) {
 			bytes in
+			guard let bytes = bytes else {
+				return self.close()
+			}
 			do {
-				if let bytes = bytes {
+				if !bytes.isEmpty {
 					self.debug(msg: "read: \(String(validatingUTF8: bytes)!)")
 					try self.sax.pushData(bytes)
 					try self.checkState()
@@ -197,7 +249,6 @@ public class XSession {
 	}
 	
 	func idle() throws {
-		// write me
 		try checkState()
 	}
 	

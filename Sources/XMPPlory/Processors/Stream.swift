@@ -8,10 +8,15 @@
 import Foundation
 
 public struct StreamStanzaProcessor: XStanzaProcessor {
-	public let registrations: [XStanzaProcessorRegistration] = [.init(localName: "stream", uri: xmppStreamsNs, closedOnly: false)]
-	public func processStanza(session: XSession, component: XStanzaComponent) throws {
+	public func registrations(session: XSession) -> [XStanzaProcessorRegistration] {
+		return [.init(localName: "stream", uri: xmppStreamsNs, closedOnly: false)]
+	}
+	public func streamFeatures(session: XSession) -> [XServerStanzaElement] {
+		return []
+	}
+	public func processStanza(session: XSession, component: XClientStanzaComponent) throws {
 		guard session.state == .new else {
-			throw XSessionError("Invalid session state for this stanza.")
+			throw XStreamError("Invalid session state for this stanza.")
 		}
 		session.queueStanzas([xmlDocHead,
 							  StanzaOpen(name: "stream:stream", attributes: [
@@ -19,11 +24,12 @@ public struct StreamStanzaProcessor: XStanzaProcessor {
 								("xmlns", xmppClientNs),
 								("version", xmppStreamVersion),
 								("id", session.id),
-								("from", session.serverName),
-								], empty: false),
-							  StanzaOpen(name: "stream:features", empty: false),
-							  StanzaClose(name: "stream:features")])
-		// !FIX! send out features gathered from processors
+								("from", session.serverName)
+								], empty: false)])
+		let rest: [XServerStanzaElement] = [StanzaOpen(name: "stream:features", empty: false)] +
+										session.streamFeatures +
+										[StanzaClose(name: "stream:features")]
+		session.queueStanzas(rest)
 		session.state = .serverStreamSent
 	}
 }

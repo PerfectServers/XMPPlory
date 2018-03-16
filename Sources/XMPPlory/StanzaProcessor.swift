@@ -19,6 +19,7 @@ public struct XStanzaProcessorRegistration {
 }
 
 public protocol XStanzaProcessor {
-	var registrations: [XStanzaProcessorRegistration] { get }
-	func processStanza(session: XSession, component: XStanzaComponent) throws
+	func registrations(session: XSession) -> [XStanzaProcessorRegistration]
+	func streamFeatures(session: XSession) -> [XServerStanzaElement]
+	func processStanza(session: XSession, component: XClientStanzaComponent) throws
 }

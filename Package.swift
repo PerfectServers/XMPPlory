@@ -9,8 +9,8 @@ let package = Package(
 		.library(name: "XMPPlory", targets: ["XMPPlory"])
 	],
 	dependencies: [
-		.package(url: "https://github.com/PerfectlySoft/Perfect-Net.git", "3.0.0"..<"4.0.0"),
-		.package(url: "https://github.com/PerfectlySoft/Perfect-XML.git", "3.1.0"..<"4.0.0"),
+		.package(url: "https://github.com/PerfectlySoft/Perfect-Net.git", from: "3.1.0"),
+		.package(url: "https://github.com/PerfectlySoft/Perfect-XML.git", from: "3.1.0"),
 		.package(url: "https://github.com/kjessup/Perfect-SQLite.git", .branch("master"))
 	],
 	targets: [

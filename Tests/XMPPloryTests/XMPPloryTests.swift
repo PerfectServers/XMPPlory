@@ -37,7 +37,20 @@ class XMPPloryTests: XCTestCase {
 	
 	func testServerRun() {
 		do {
-			let server = try XServer(name: "127.0.0.1", processors: XServer.standardProcessors + [IQRegisterProcessor()])
+			struct AuthProvider: XAuthProvider {
+				var supportsSha1: Bool { return false }
+				func validatePasswordSha1(_ name: String, digestHex: String, resource: String) -> Bool {
+					return true
+				}
+				func validatePassword(_ name: String, password: String, resource: String) -> Bool {
+					return true
+				}
+				func isValidUsername(_ name: String) -> Bool {
+					return true
+				}
+			}
+			let regProc = IQAuthProcessor(provider: AuthProvider())
+			let server = try XServer(name: "127.0.0.1", processors: XServer.standardProcessors + [regProc])
 			try server.start()
 		} catch {
 			XCTFail("\(error)")

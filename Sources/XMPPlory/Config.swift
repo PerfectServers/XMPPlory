@@ -19,3 +19,6 @@ let xmppStreamsNs = "http://etherx.jabber.org/streams"
 let xmppClientNs = "jabber:client"
 let xmppStreamVersion = "1.0"
 
+let serverPrivateKeyPath = "/Users/kjessup/development/PerfectNeu/XMPPlory/config/server.key"
+let serverCertPath = "/Users/kjessup/development/PerfectNeu/XMPPlory/config/server.crt"
+
